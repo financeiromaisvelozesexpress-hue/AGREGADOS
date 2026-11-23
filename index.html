@@ -212,6 +212,9 @@ input,select,textarea{border-radius:4px;border:1px solid var(--line)}
 .chart .bar{fill:var(--s1)}
 .chart .bar2{fill:var(--s2)}
 .chart .lbl2{fill:var(--magenta)}
+:root{--s3:#2E9E5B}
+.chart .bar3{fill:var(--s3)}
+.chart .lbl3{fill:var(--s3);font:600 11px var(--f-body)}
 .brow .fill{background:var(--cinza-barra)}
 .brow .val{color:var(--magenta);font-weight:600}
 .brow span:first-child{color:var(--muted)}
@@ -812,15 +815,19 @@ function barsH(data){
 }
 function barsStack(data,valFmt,tipFn){
   const W=720,H=260,pl=56,pr=8,pt=18,pb=34; const iw=W-pl-pr, ih=H-pt-pb;
-  const {max,ticks}=niceScale(Math.max(0,...data.map(d=>d.a+d.b)));
-  const bw=iw/data.length; const w=Math.max(4,Math.min(36,bw*0.62)); const every=Math.ceil(data.length/12);
+  const temC=data.some(d=>d.c);
+  const lf=v=>v>=1e6?(v/1e6).toLocaleString('pt-BR',{maximumFractionDigits:2})+' mi':v>=1e3?(v/1e3).toLocaleString('pt-BR',{maximumFractionDigits:1})+' mil':String(Math.round(v));
+  const {max,ticks}=niceScale(Math.max(0,...data.map(d=>Math.max(d.a+d.b,d.c||0))));
+  const bw=iw/data.length; const w=Math.max(4,Math.min(36,bw*(temC?0.36:0.62))); const gapC=temC?Math.max(2,Math.min(4,bw*0.04)):0; const every=Math.ceil(data.length/12);
   const peak=data.reduce((m,d,i)=>(d.a+d.b)>(data[m].a+data[m].b)?i:m,0);
   const seg=(x,yTop,h,cls,round)=>{ if(h<=0) return ''; const r=round?Math.min(4,w/2,h):0; return r?`<path class="${cls}" d="M${x},${yTop+h} V${yTop+r} Q${x},${yTop} ${x+r},${yTop} H${x+w-r} Q${x+w},${yTop} ${x+w},${yTop+r} V${yTop+h} Z"/>`:`<rect class="${cls}" x="${x}" y="${yTop}" width="${w}" height="${h}"/>`; };
   return `<svg viewBox="0 0 ${W} ${H}" role="img">${ticks.map(t=>{const y=pt+ih-ih*t/max;return `<line class="grid" x1="${pl}" x2="${W-pr}" y1="${y}" y2="${y}"/><text class="axis" x="${pl-8}" y="${y+4}" text-anchor="end">${valFmt(t)}</text>`;}).join('')}
-  ${data.map((d,i)=>{const x=pl+bw*i+(bw-w)/2; const ha=ih*d.a/max, hb=ih*d.b/max; const yA=pt+ih-ha; const gap=ha>0&&hb>0?2:0; const yB=yA-hb-gap+ (hb>0?0:0);
-    return `<g data-tip="${esc(tipFn(d))}"><rect class="hit" x="${pl+bw*i}" y="${pt}" width="${bw}" height="${ih}"/>${seg(x,yA,ha,'bar',hb<=0)}${seg(x,yA-gap-hb,hb,'bar2',true)}
-    ${i%every===0||i===data.length-1?`<text class="axis" x="${x+w/2}" y="${H-12}" text-anchor="middle">${esc(d.k)}</text>`:''}
-    ${i===peak&&(d.a+d.b)>0?`<text class="lbl2" x="${x+w/2}" y="${yA-hb-gap-6}" text-anchor="middle">${valFmt(d.a+d.b)}</text>`:''}</g>`;}).join('')}</svg>`;
+  ${data.map((d,i)=>{const grp=temC?w*2+gapC:w; const x=pl+bw*i+(bw-grp)/2; const ha=ih*d.a/max, hb=ih*d.b/max; const yA=pt+ih-ha; const gap=ha>0&&hb>0?2:0;
+    const hc=temC?ih*(d.c||0)/max:0; const xc=x+w+gapC;
+    return `<g data-tip="${esc(tipFn(d))}"><rect class="hit" x="${pl+bw*i}" y="${pt}" width="${bw}" height="${ih}"/>${seg(x,yA,ha,'bar',hb<=0)}${seg(x,yA-gap-hb,hb,'bar2',true)}${temC?seg(xc,pt+ih-hc,hc,'bar3',true):''}
+    ${i%every===0||i===data.length-1?`<text class="axis" x="${x+grp/2}" y="${H-12}" text-anchor="middle">${esc(d.k)}</text>`:''}
+    ${i===peak&&(d.a+d.b)>0?`<text class="lbl2" x="${x+w/2}" y="${yA-hb-gap-6}" text-anchor="middle">${lf(d.a+d.b)}</text>`:''}
+    ${temC&&d.c?`<text class="lbl3" x="${xc+w/2}" y="${pt+ih-hc-6}" text-anchor="middle">${lf(d.c)}</text>`:''}</g>`;}).join('')}</svg>`;
 }
 let PD=null; function viewPainelRB(){ if(!PD) return viewPainel(); const bak={fech:S.fech,custos:S.custos,locacoes:S.locacoes}; Object.assign(S,PD); try{ return viewPainel(); } finally { Object.assign(S,bak); } }
 function viewPainel(){
@@ -842,7 +849,7 @@ function viewPainel(){
   const comDados=rows.filter(a=>a.n||a.av); const media=comDados.length?total/comDados.length:0;
   const ult=rows[rows.length-1], ant=rows[rows.length-2];
   const delta=ult&&ant&&(ant.v+ant.av)?(((ult.v+ult.av)-(ant.v+ant.av))/(ant.v+ant.av)*100):null;
-  const tip=a=>'<b>'+qLabel(a.q)+'</b><br>Agregados '+fmt(a.v)+'<br>Custos avulsos '+fmt(a.av)+'<br><b>Total '+fmt(a.v+a.av)+'</b><br>'+a.ags.size+' agregado'+(a.ags.size===1?'':'s')+' fechado'+(a.ags.size===1?'':'s');
+  const tip=a=>'<b>'+qLabel(a.q)+'</b><br>Agregados '+fmt(a.v)+'<br>Custos avulsos '+fmt(a.av)+'<br><b>Total '+fmt(a.v+a.av)+'</b><br>NFS importadas '+fmt(a.nfs||0)+' ('+(a.nNfs||0)+')<br>'+a.ags.size+' agregado'+(a.ags.size===1?'':'s')+' fechado'+(a.ags.size===1?'':'s');
   const locData=Object.values(porLoc).sort((a,b)=>b.v-a.v);
   const grupoDe=n=>{ const l=S.locacoes.find(x=>x.nome===n); return (l&&l.grupo)||'Sem grupo'; };
   const porLocPer=pm=>{ if(!pm) return locData; const gQ=pm.length>7, inG=q=>gQ?q===pm:q.slice(0,7)===pm; const pl={};
@@ -881,7 +888,7 @@ function viewPainel(){
       <div class="tile"><div class="k">Custos avulsos</div><div class="v">${fmt(totAv)}</div><div class="h">${total?(totAv/total*100).toLocaleString('pt-BR',{maximumFractionDigits:1})+'% do custo total':'—'}</div></div>
     </div>
     <div class="cgrid">
-      <div class="panel"><div class="ph"><h2>Custo por quinzena</h2><div class="legend2"><span><i style="background:var(--s1)"></i>Agregados</span><span><i style="background:var(--s2)"></i>Custos avulsos</span></div></div><div class="chart">${(lanc||totAv)?barsStack(rows.map(a=>({k:qCurto(a.q),a:a.v,b:a.av,o:a})),kfmt,d=>tip(d.o)):'<div class="empty">Nenhum lançamento neste período.</div>'}</div></div>
+      <div class="panel"><div class="ph"><h2>Custo por quinzena</h2><div class="legend2"><span><i style="background:var(--s1)"></i>Agregados</span><span><i style="background:var(--s2)"></i>Custos avulsos</span><span><i style="background:var(--s3)"></i>NFS importadas</span></div></div><div class="chart">${(lanc||totAv||rows.some(a=>a.nfs))?barsStack(rows.map(a=>({k:qCurto(a.q),a:a.v,b:a.av,c:a.nfs||0,o:a})),kfmt,d=>tip(d.o)):'<div class="empty">Nenhum lançamento neste período.</div>'}</div></div>
       <div class="panel"><div class="ph"><div><h2>Custo por locação</h2><span style="color:var(--muted);font-size:12px">${esc(perLbl(UI.lMes))}</span></div>${perSel('lMes',UI.lMes)}</div>${barsH(locShow)}</div>
     </div>
     <div class="panel"><div class="ph"><div><h2>Custo por grupo</h2><span style="color:var(--muted);font-size:12px">agregados + custos avulsos · ${esc(gLabel)}${grpData.some(g=>g.k==='Sem grupo')?' · locações sem grupo aparecem em “Sem grupo”':''}</span></div>
