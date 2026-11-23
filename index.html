@@ -599,7 +599,7 @@ function fechadosNaQ(qid){ const set=new Map(); S.fech.filter(f=>f.qid===qid).fo
 function noPeriodo(a,start,end){ const ini=parse(a.inicio), fim=parse(a.fim); if(!ini) return false; if(a.ativo===false) return false; return ini<=end && (!fim||fim>=start); }
 function elegiveis(){ const {start,end}=periodo(); const fx=fechadosNaQ(qId(UI.q)); return S.agregados.filter(a=>noPeriodo(a,start,end)&&!fx.has(a.id)).sort((x,y)=>x.nome.localeCompare(y.nome,'pt-BR')); }
 const SIT={T:'Trabalhado',D:'Dispensado',N:'Não trabalhado'};
-function calcAg(a,start,end,h,aj){
+function calcAg(a,start,end,h,aj,semFaltas){
   aj=aj||{}; const ov=aj.dias||{}; const locObj=S.locacoes.find(l=>l.nome===a.locacao); const segLoc=locObj?num(locObj.diariaSegunda):0;
   const ini=parse(a.inicio), fim=parse(a.fim);
   const s=ini>start?ini:start; const e=fim&&fim<end?fim:end;
@@ -611,9 +611,13 @@ function calcAg(a,start,end,h,aj){
       if(fer.has(k)) base='N';
       else if(w===0) base='D';
       else if(w===6 && a.trabalhaSabado!=='S') base='D';
+      // faltas lançadas na aba Frequência entram como padrão do dia (o operador ainda pode mudar clicando no dia)
+      const falta=(!semFaltas&&base==='T'&&window.__ext&&window.__ext.faltaDe)?window.__ext.faltaDe(a.id,k):'';
+      if(falta==='I') base='N';
       const sit=ov[k]||base; const taxa=fds?num(a.diariaFds):(w===1&&segLoc>0?segLoc:num(a.diariaUtil));
-      const vo=(aj.valores||{})[k]; const editado=sit==='T'&&vo!=null&&String(vo).trim()!==''&&num(vo)!==taxa;
-      dias.push({data:k,w,sit,taxa,valor:sit==='T'?(editado?num(vo):taxa):0,editado,feriado:fer.get(k)||''});
+      let vo=(aj.valores||{})[k]; if(falta==='M'&&sit==='T'&&(vo==null||String(vo).trim()==='')) vo=String(Math.round(taxa*50)/100);
+      const editado=sit==='T'&&vo!=null&&String(vo).trim()!==''&&num(vo)!==taxa;
+      dias.push({data:k,w,sit,taxa,valor:sit==='T'?(editado?num(vo):taxa):0,editado,feriado:fer.get(k)||'',falta:falta&&!ov[k]?falta:''});
     } }
   const lim=l=>(l||[]).filter(x=>(x.d||'').trim()||num(x.v)).map(x=>({desc:(x.d||'').trim(),valor:Math.abs(num(x.v))}));
   const descontos=lim(aj.desc), acrescimos=lim(aj.acr);
@@ -623,7 +627,7 @@ function calcAg(a,start,end,h,aj){
     de:s<=e?iso(s):'',ate:s<=e?iso(e):'',diariaUtil:num(a.diariaUtil),diariaFds:num(a.diariaFds),dias,nT:c('T'),nD:c('D'),nN:c('N'),
     subtotal,descontos,acrescimos,totDesc,totAcr,total:subtotal+totAcr-totDesc};
 }
-window.__app = {S, calcAg, noPeriodo};
+window.__app = {S, calcAg, noPeriodo, render:()=>{ const ae=document.activeElement; if(UI.tab==='fechamento'&&!(ae&&ae.dataset&&(ae.dataset.line||ae.dataset.dv))) render(); }};
 function selecionados(){ const {start,end}=periodo(); return UI.sel.map(id=>S.agregados.find(a=>a.id===id)).filter(Boolean).map(a=>calcAg(a,start,end,UI.q.h,UI.aj[a.id])); }
 
 /* ---------- render ---------- */
@@ -683,13 +687,13 @@ function viewNovo(){
         <td class="n"><button data-act="det" data-id="${r.agregadoId}">${open?'Recolher':'Detalhar'}</button></td></tr>
         ${open?`<tr><td colspan="7" style="padding:0"><div class="detail">
           <h4>Dias do período · diária seg–sex ${fmt(r.diariaUtil)} · sáb–dom ${fmt(r.diariaFds)}</h4>
-          <div class="days">${r.dias.map(d=>{const vo=(aj.valores||{})[d.data]; return `<div class="day ${d.sit}${d.editado?' ed':''}"><button type="button" data-day="${r.agregadoId}|${d.data}" title="${esc(d.feriado||'Clique para mudar a situação')}"><b>${br(d.data).slice(0,5)} ${DOW[d.w]}</b><small>${SIT[d.sit]}${d.feriado?' · feriado':''}${d.editado?' · ajustado':''}</small></button>${d.sit==='T'?`<input class="dv" id="dv-${r.agregadoId}-${d.data}" data-dv="${r.agregadoId}|${d.data}" inputmode="decimal" value="${esc(vo!=null?vo:d.taxa.toLocaleString('pt-BR',{minimumFractionDigits:2}))}" aria-label="Valor da diária em ${br(d.data)}">`:'<span class="dvx">—</span>'}</div>`;}).join('')}</div>
+          <div class="days">${r.dias.map(d=>{const vo=(aj.valores||{})[d.data]; return `<div class="day ${d.sit}${d.editado?' ed':''}"><button type="button" data-day="${r.agregadoId}|${d.data}" title="${esc(d.feriado||'Clique para mudar a situação')}"><b>${br(d.data).slice(0,5)} ${DOW[d.w]}</b><small>${SIT[d.sit]}${d.feriado?' · feriado':''}${d.falta==='I'?' · falta':d.falta==='M'&&d.sit==='T'?' · falta meio período':d.editado?' · ajustado':''}</small></button>${d.sit==='T'?`<input class="dv" id="dv-${r.agregadoId}-${d.data}" data-dv="${r.agregadoId}|${d.data}" inputmode="decimal" value="${esc(vo!=null?vo:d.valor.toLocaleString('pt-BR',{minimumFractionDigits:2}))}" aria-label="Valor da diária em ${br(d.data)}">`:'<span class="dvx">—</span>'}</div>`;}).join('')}</div>
           <div class="cols2">${['desc','acr'].map(k=>{const L=aj[k]||[]; return `<div class="lines"><h4>${k==='desc'?'Descontos':'Acréscimos'}</h4>
             ${L.map((x,i)=>`<div class="line"><input id="l-${r.agregadoId}-${k}-${i}" data-line="${r.agregadoId}|${k}|${i}|d" placeholder="Descrição" value="${esc(x.d||'')}"><input id="v-${r.agregadoId}-${k}-${i}" data-line="${r.agregadoId}|${k}|${i}|v" inputmode="decimal" placeholder="0,00" value="${esc(x.v||'')}" style="text-align:right"><button class="icon" data-delline="${r.agregadoId}|${k}|${i}" aria-label="Remover">×</button></div>`).join('')}
             <div><button data-addline="${r.agregadoId}|${k}">+ ${k==='desc'?'Desconto':'Acréscimo'}</button></div></div>`;}).join('')}</div>
         </div></td></tr>`:''}`;}).join('')}</tbody>
       ${rows.length>1?`<tfoot><tr><td colspan="5">Total do fechamento</td><td class="n">${fmt(tot)}</td><td></td></tr></tfoot>`:''}</table></div></section>`:''}
-    <p class="sub" style="font-size:12px">Regra padrão: segunda a sexta trabalhados; sábado dispensado, exceto para quem tem “Trabalha aos sábados = S” no cadastro; domingo dispensado; feriados da locação do agregado como não trabalhados. Se alguém trabalhou em feriado ou domingo, clique no dia para marcar como trabalhado antes de gravar.</p>
+    <p class="sub" style="font-size:12px">Regra padrão: segunda a sexta trabalhados; sábado dispensado, exceto para quem tem “Trabalha aos sábados = S” no cadastro; domingo dispensado; feriados da locação do agregado como não trabalhados. Se alguém trabalhou em feriado ou domingo, clique no dia para marcar como trabalhado antes de gravar. Faltas lançadas na aba Frequência já entram marcadas: dia inteiro como “Não trabalhado” e meio período com metade da diária.</p>
    </div>
    <aside class="side">
     ${ult?`<div class="panel sumbox" style="border-color:var(--ok)"><div style="font-weight:600">Fechamento ${ult.tipo==='lote'?'em lote':'individual'} Nº ${ult.numero} gravado</div><div style="color:var(--muted);font-size:12.5px">${(ult.itens||[]).length} agregado${(ult.itens||[]).length===1?'':'s'} · ${fmt(ult.total)}</div><div class="row"><button data-act="pdfRes" data-id="${ult.id}">Resumo do lote</button><button data-act="pdfF" data-id="${ult.id}">PDF completo</button></div></div>`:''}
@@ -1016,7 +1020,7 @@ function renderEdFech(){
   <input type="hidden" id="m_kind" value="edfech"><input type="hidden" id="m_id" value="${esc(ED.fid)}">
   <div class="grid2"><label class="lbl">Data de pagamento${n>1?` (vale para os ${n} lançamentos do lote)`:''}<input type="date" id="ed_pag" value="${esc(ED.pag)}"></label><div></div></div>
   <div class="hist"><h4>Dias · clique para mudar a situação; edite o valor para diária reduzida</h4>
-  <div class="days">${it.dias.map(d=>`<div class="day ${d.sit}${d.editado?' ed':''}"><button type="button" data-edday="${d.data}" title="${esc(d.feriado||'')}"><b>${br(d.data).slice(0,5)} ${DOW[d.w]}</b><small>${SIT[d.sit]}${d.feriado?' · feriado':''}${d.editado?' · ajustado':''}</small></button>${d.sit==='T'?`<input class="dv" id="edv-${d.data}" data-edv="${d.data}" inputmode="decimal" value="${dv(d)}" aria-label="Valor em ${br(d.data)}">`:'<span class="dvx">—</span>'}</div>`).join('')}</div></div>
+  <div class="days">${it.dias.map(d=>`<div class="day ${d.sit}${d.editado?' ed':''}"><button type="button" data-edday="${d.data}" title="${esc(d.feriado||'')}"><b>${br(d.data).slice(0,5)} ${DOW[d.w]}</b><small>${SIT[d.sit]}${d.feriado?' · feriado':''}${d.falta==='I'?' · falta':d.falta==='M'&&d.sit==='T'?' · falta meio período':d.editado?' · ajustado':''}</small></button>${d.sit==='T'?`<input class="dv" id="edv-${d.data}" data-edv="${d.data}" inputmode="decimal" value="${dv(d)}" aria-label="Valor em ${br(d.data)}">`:'<span class="dvx">—</span>'}</div>`).join('')}</div></div>
   <div class="cols2">${['descontos','acrescimos'].map(k=>`<div class="lines"><h4>${k==='descontos'?'Descontos':'Acréscimos'}</h4>
     ${(it[k]||[]).map((x,i)=>`<div class="line"><input id="edl-${k}-${i}-d" data-edl="${k}|${i}|desc" placeholder="Descrição" value="${esc(x.desc||'')}"><input id="edl-${k}-${i}-v" data-edl="${k}|${i}|valor" inputmode="decimal" placeholder="0,00" style="text-align:right" value="${x.valor?num(x.valor).toLocaleString('pt-BR',{minimumFractionDigits:2}):''}"><button type="button" class="icon" data-eddel="${k}|${i}" aria-label="Remover">×</button></div>`).join('')}
     <div><button type="button" data-edadd="${k}">+ ${k==='descontos'?'Desconto':'Acréscimo'}</button></div></div>`).join('')}</div>

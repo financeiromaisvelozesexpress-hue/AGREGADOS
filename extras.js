@@ -35,7 +35,7 @@ window.__ext = (function(){
   async function carrega(c){
     const m=new Map();
     for(let de=0;;de+=1000){ const {data,error}=await sb().from('docs').select('id,data').eq('colecao',c).range(de,de+999); if(error) break; data.forEach(r=>m.set(r.id,r.data)); if(data.length<1000) break; }
-    D[c]=m; loaded[c]=true; redesenhar();
+    D[c]=m; loaded[c]=true; redesenhar(); if(c==='faltas'&&app()&&app().render) app().render();
   }
   function conectar(){
     if(conectado||!sb()) return; conectado=true;
@@ -43,7 +43,7 @@ window.__ext = (function(){
     sb().channel('docs-ext').on('postgres_changes',{event:'*',schema:'public',table:'docs'},p=>{
       const r=p.new&&p.new.colecao?p.new:p.old; if(!r||!COLS.includes(r.colecao)) return;
       if(p.eventType==='DELETE') D[r.colecao].delete(p.old.id); else D[r.colecao].set(p.new.id,p.new.data);
-      clearTimeout(conectar._t); conectar._t=setTimeout(redesenhar,60);
+      clearTimeout(conectar._t); conectar._t=setTimeout(()=>{ redesenhar(); if(r.colecao==='faltas'&&app()&&app().render) app().render(); },60);
     }).subscribe();
   }
   async function gravar(c,id,body){
@@ -66,7 +66,7 @@ window.__ext = (function(){
   const agPorId = id => AGS().find(a=>a.id===id);
   function ativoNoPeriodo(a,ini,fim){ return app().noPeriodo(a,uDate(ini),uDate(fim)); }
   // situação-base do dia pelo cálculo do fechamento: T trabalhado, D dispensado, N não trabalhado (feriado)
-  function diaBase(a,d){ const h=+d.slice(8)<=15?1:2; const r=app().calcAg(a,uDate(d),uDate(d),h,{}); return r.dias[0]||null; }
+  function diaBase(a,d){ const h=+d.slice(8)<=15?1:2; const r=app().calcAg(a,uDate(d),uDate(d),h,{},true); return r.dias[0]||null; }
   const descontoDe = (a,d,p) => { const b=diaBase(a,d); return b&&b.sit==='T' ? b.taxa*(p==='M'?.5:1) : 0; };
 
   /* ---------------- ordenação ---------------- */
@@ -711,5 +711,7 @@ window.__ext = (function(){
     @media (max-width:700px){.xgrid .x2{grid-column:auto}}
   `; document.head.appendChild(st); })();
   if(window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-  return {mostrar, conectar};
+  // usado pelo cálculo do fechamento: 'I' (dia inteiro), 'M' (meio período) ou ''
+  function faltaPeriodo(agId,d){ const f=D.faltas.get(`${d}_${agId}`); return f&&f.periodo||''; }
+  return {mostrar, conectar, faltaDe:faltaPeriodo};
 })();
