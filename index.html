@@ -545,7 +545,7 @@ window.__conectar = () => new Promise(resolve=>{
 
 <script>
 (function(){
-const S = { agregados:[], locacoes:[], feriados:[], fech:[], config:{feriadoRegra:'sabdom'}, loaded:{a:false,l:false,f:false,q:false,c:false}, custos:[] };
+const S = { agregados:[], locacoes:[], feriados:[], fech:[], config:{feriadoRegra:'sabdom'}, loaded:{a:false,l:false,f:false,q:false,c:false}, custos:[], faltas:new Map() };
 const UI = { cLoc:'', cTipo:'', cf:{data:'',loc:'',tipo:'Agregado esporádico',qtd:'1',vu:'',desc:'',sub:''}, colar:'', pMes:'', gMes:'', lMes:'', pN:6, pLoc:'', hBusca:'', hLoc:'', hQ:'', sort:{k:'pag',dir:-1}, det:{}, ultimo:'', tab:'fechamento', q: currentQuinzena(), de:'', ate:'', pag:'', modo:'individual', sel:[], aj:{}, busca:'', expand:{}, delAsk:'', saving:false, fAno:String(new Date().getFullYear()), mostrarInativos:false };
 let db = null;
 const writeChains = {};
@@ -612,7 +612,7 @@ function calcAg(a,start,end,h,aj,semFaltas){
       else if(w===0) base='D';
       else if(w===6 && a.trabalhaSabado!=='S') base='D';
       // faltas lançadas na aba Frequência entram como padrão do dia (o operador ainda pode mudar clicando no dia)
-      const falta=(!semFaltas&&base==='T'&&window.__ext&&window.__ext.faltaDe)?window.__ext.faltaDe(a.id,k):'';
+      const fx=(!semFaltas&&base==='T')?S.faltas.get(k+'_'+a.id):null; const falta=(fx&&fx.periodo)||'';
       if(falta==='I') base='N';
       const sit=ov[k]||base; const taxa=fds?num(a.diariaFds):(w===1&&segLoc>0?segLoc:num(a.diariaUtil));
       let vo=(aj.valores||{})[k]; if(falta==='M'&&sit==='T'&&(vo==null||String(vo).trim()==='')) vo=String(Math.round(taxa*50)/100);
@@ -680,7 +680,7 @@ function viewNovo(){
         :`<div class="empty">${lista.length?'Nenhum agregado encontrado na busca.':'Todos os agregados deste período já têm fechamento.'}</div>`}
       ${nFechados?`<p class="sub" style="font-size:12.5px">${nFechados} agregado${nFechados>1?'s':''} já ${nFechados>1?'têm':'tem'} fechamento nesta quinzena e não ${nFechados>1?'aparecem':'aparece'} na lista. <a href="#" data-act="verHist" style="color:var(--accent)">Ver fechamentos</a></p>`:''}
     </section>
-    ${rows.length?`<section class="panel"><div class="ph"><h2>3 · Conferência</h2><span style="color:var(--muted);font-size:12px">Clique no dia para mudar a situação; edite o valor para diárias de período reduzido</span></div>
+    ${rows.length?`<section class="panel"><div class="ph"><h2>3 · Conferência</h2><span style="color:var(--muted);font-size:12px">Clique no dia para mudar a situação; edite o valor para diárias de período reduzido${(()=>{const n=rows.reduce((t,r)=>t+r.dias.filter(d=>d.falta).length,0); return n?` · <b style="color:var(--magenta)">${n} falta${n>1?'s':''} da aba Frequência aplicada${n>1?'s':''}</b>`:'';})()}</span></div>
       <div class="scroll"><table style="min-width:640px"><thead><tr><th>Agregado</th><th class="n">Trab. / Disp. / Não trab.</th><th class="n">Diárias</th><th class="n">Acréscimos</th><th class="n">Descontos</th><th class="n">Total</th><th></th></tr></thead>
       <tbody>${rows.map(r=>{const open=UI.det[r.agregadoId]??(rows.length===1); const aj=UI.aj[r.agregadoId]||{}; return `<tr><td><div style="font-weight:600">${esc(r.nome)}</div><div class="dim">${esc(r.locacao)}${r.cc?' · <span class="mono">'+esc(r.cc)+'</span>':''}</div></td>
         <td class="n mono">${r.nT} / ${r.nD} / ${r.nN}</td><td class="n">${fmt(r.subtotal)}</td><td class="n">${r.totAcr?'+ '+fmt(r.totAcr):'—'}</td><td class="n">${r.totDesc?'− '+fmt(r.totDesc):'—'}</td><td class="n" style="font-weight:600">${fmt(r.total)}</td>
@@ -1439,6 +1439,7 @@ render();
   const sub=(col,key,flag)=>db.collection(col).onSnapshot(snap=>{ S[key]=snap.docs.map(d=>({...d.data(),id:d.id})); S.loaded[flag]=true; if(!document.activeElement||!document.activeElement.dataset||!document.activeElement.dataset.line&&!document.activeElement.dataset.dv) render(); },e=>console.error(col,e));
   sub('agregados','agregados','a'); sub('locacoes','locacoes','l'); sub('feriados','feriados','f'); sub('custos','custos','c');
   db.collection('fech').onSnapshot(snap=>{ S.fech=snap.docs.map(d=>({...JSON.parse(JSON.stringify(d.data())),id:d.id})); S.loaded.q=true; if(!document.activeElement||!document.activeElement.dataset||!document.activeElement.dataset.line&&!document.activeElement.dataset.dv) render(); },e=>console.error(e));
+  db.collection('faltas').onSnapshot(snap=>{ S.faltas=new Map(snap.docs.map(d=>[d.id,d.data()])); const ae=document.activeElement; if(!(ae&&ae.dataset&&(ae.dataset.line||ae.dataset.dv))) render(); },e=>console.error('faltas',e));
   db.doc('config/geral').onSnapshot(s=>{ if(s.exists){ S.config={feriadoRegra:'sabdom',...s.data()}; render(); } },e=>console.error(e));
 })();
 })();
