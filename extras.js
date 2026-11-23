@@ -28,9 +28,10 @@ window.__ext = (function(){
   const quem = () => { const ac=rb()&&rb().ac&&rb().ac(); return ac?{por:ac.email||'',porNome:ac.nome||ac.email||''}:{por:'',porNome:''}; };
 
   /* ---------------- dados (docs: faltas, freqconf, nfs) ---------------- */
-  const COLS = ['faltas','freqconf','nfs'];
-  const D = {faltas:new Map(), freqconf:new Map(), nfs:new Map()};
-  const loaded = {faltas:false, freqconf:false, nfs:false};
+  const COLS = ['faltas','freqconf','nfs','adiant'];
+  const D = {faltas:new Map(), freqconf:new Map(), nfs:new Map(), adiant:new Map()};
+  const loaded = {faltas:false, freqconf:false, nfs:false, adiant:false};
+  const modDe = c => c==='nfs'?'nfs':c==='adiant'?'adiantamentos':'frequencia';
   let conectado=false;
   async function carrega(c){
     const m=new Map();
@@ -39,7 +40,7 @@ window.__ext = (function(){
   }
   function conectar(){
     if(conectado||!sb()) return; conectado=true;
-    COLS.forEach(c=>{ if(pode(c==='nfs'?'nfs':'frequencia','ver')) carrega(c); else loaded[c]=true; });
+    COLS.forEach(c=>{ if(pode(modDe(c),'ver')) carrega(c); else loaded[c]=true; });
     sb().channel('docs-ext').on('postgres_changes',{event:'*',schema:'public',table:'docs'},p=>{
       const r=p.new&&p.new.colecao?p.new:p.old; if(!r||!COLS.includes(r.colecao)) return;
       if(p.eventType==='DELETE') D[r.colecao].delete(p.old.id); else D[r.colecao].set(p.new.id,p.new.data);
@@ -552,11 +553,11 @@ window.__ext = (function(){
   }
   function desenhaModal(){
     let r=document.getElementById('xModal'); if(!N.ed){ if(r) r.remove(); return; }
-    if(!r){ r=document.createElement('div'); r.id='xModal'; r.className='modal'; document.body.appendChild(r); ligarModal(r); }
+    const novo=!r; if(!r){ r=document.createElement('div'); r.id='xModal'; r.className='modal'; document.body.appendChild(r); ligarModal(r); }
     const it=N.ed, miss=faltando(it), dup=duplicada(it,it.id), mq=mesmaQz(it,it.id), avc=avisoComp(it);
     const podeSalvar=N.edOrig?pode('nfs','editar'):pode('nfs','criar');
     const foco=document.activeElement&&document.activeElement.dataset&&document.activeElement.dataset.xm;
-    r.innerHTML=`<div class="dialog" style="max-width:980px"><div class="row" style="justify-content:space-between"><h3>${N.edOrig?'NFS nº '+esc(N.edOrig.numero):'Incluir NFS manualmente'}</h3>
+    r.innerHTML=`<div class="dialog" style="max-width:980px${novo?'':';animation:none'}"><div class="row" style="justify-content:space-between"><h3>${N.edOrig?'NFS nº '+esc(N.edOrig.numero):'Incluir NFS manualmente'}</h3>
       ${dup?'<span class="pill bad">Nº já lançado para este prestador</span>':miss.length?`<span class="pill warn">${miss.length} campo(s) obrigatório(s)</span>`:'<span class="pill ok">Pronta para salvar</span>'}</div>
       ${podeSalvar?'':'<div class="notice">Somente leitura: seu perfil não pode editar NFS.</div>'}
       ${mq?`<div class="notice warn">Já existe a NFS nº ${esc(mq.numero)} deste agregado na ${esc(refLabel(mq.refMes,mq.quinzena))}.</div>`:''}${avc?`<div class="notice warn">${esc(avc)}</div>`:''}
@@ -605,6 +606,138 @@ window.__ext = (function(){
   function pdfEmp(){ if(semPdf()) return; const rows=ordenar(empresas(),N.sortE,(r,k)=>k==='cnpj'?dig(r.cnpj):r[k]);
     previsualizar(montarPdf({titulo:'Empresas do grupo',head:['Empresa','CNPJ'],body:rows.map(e=>[e.nome,fmtDoc(e.cnpj)||'—'])}),nomeArq('empresas-do-grupo'),'Pré-visualização · Empresas do grupo'); }
 
+
+  /* =====================================================================
+     ADIANTAMENTOS
+     ===================================================================== */
+  const AD = { busca:'', sit:'', qz:'', sort:{col:'data',dir:-1}, ed:null, edOrig:null };
+  const num2 = v => Math.round((Number(v)||0)*100)/100;
+  const qidAtual = () => { const t=hojeIso(); return t.slice(0,7)+'-Q'+(+t.slice(8)<=15?1:2); };
+  const qidLabel = q => q?`${q.slice(9)}ª quinzena · ${q.slice(5,7)}/${q.slice(0,4)}`:'';
+  const qidCurto = q => q?`${q.slice(9)}ª ${MESES[+q.slice(5,7)-1].slice(0,3)}/${q.slice(2,4)}`:'';
+  function qidShift(q,n){ let y=+q.slice(0,4), m=+q.slice(5,7), h=+q.slice(9); for(let i=0;i<Math.abs(n);i++){ if(n>0){ if(h===1)h=2; else {h=1;m++; if(m>12){m=1;y++;}} } else { if(h===2)h=1; else {h=2;m--; if(m<1){m=12;y--;}} } } return y+'-'+pad(m)+'-Q'+h; }
+  const opcoesQz = sel => { const base=qidAtual(), L=[]; for(let i=-6;i<=24;i++) L.push(qidShift(base,i)); if(sel&&!L.includes(sel)) L.unshift(sel); return L.map(q=>`<option value="${q}" ${q===sel?'selected':''}>${qidLabel(q)}</option>`).join(''); };
+  const adList = () => [...D.adiant.entries()].map(([id,d])=>({...d,id}));
+  function baixas(){ const m=new Map(); ((app()&&app().S.fech)||[]).forEach(f=>(f.itens||[]).forEach(it=>(it.descontos||[]).forEach(x=>{ if(x&&x.ad) m.set(x.ad,{numero:f.numero,qid:f.qid,valor:Number(x.valor)||0}); }))); return m; }
+  const SIT_AD={pend:['Pendente','off'],parc:['Parcialmente descontado','warn'],quit:['Quitado','ok'],atras:['Atrasado','bad']};
+  function statusAd(a,B){ const qa=qidAtual(); const n=(a.parcelas||[]).length;
+    const ps=(a.parcelas||[]).map((p,i)=>{ const k=a.id+'#'+i, b=B.get(k); return {...p,i,k,n,baixa:b,sit:b?'desc':(p.qid<qa?'atras':'pend')}; });
+    const nd=ps.filter(p=>p.baixa).length; const descontado=num2(ps.filter(p=>p.baixa).reduce((s,p)=>s+(p.baixa.valor||0),0));
+    const sit=!ps.length?'pend':nd===ps.length?'quit':ps.some(p=>p.sit==='atras')?'atras':nd?'parc':'pend';
+    return {ps,sit,descontado,saldo:num2(num2(a.valor)-descontado)}; }
+  function linhasAd(){ const B=baixas(), b=AD.busca.trim().toLowerCase();
+    return adList().map(a=>{ const ag=agPorId(a.agregadoId), st=statusAd(a,B);
+      return {a,id:a.id,data:a.data||'',nome:ag?ag.nome:a.agregado||'',cliente:ag?ag.empresa||'':'',locacao:ag?ag.locacao||'':'',valor:num2(a.valor),nParc:(a.parcelas||[]).length,
+        primeira:(a.parcelas||[]).map(p=>p.qid).sort()[0]||'',autorizou:a.autorizou||'',descontado:st.descontado,saldo:st.saldo,sit:st.sit,ps:st.ps,por:a.porNome||a.por||''}; })
+     .filter(r=>(!b||(r.nome+' '+r.cliente+' '+r.locacao+' '+(r.a.obs||'')+' '+r.autorizou).toLowerCase().includes(b))&&(!AD.sit||r.sit===AD.sit)&&(!AD.qz||r.ps.some(p=>p.qid===AD.qz))); }
+  const ACOLS=[['_',''],['data','Data'],['nome','Agregado'],['cliente','Cliente'],['locacao','Locação'],['valor','Valor',1],['nParc','Parcelas',1],['primeira','Descontar em'],['descontado','Descontado',1],['saldo','Saldo',1],['sit','Situação'],['autorizou','Autorizado por'],['por','Lançado por']];
+  function vAdiant(){
+    const rows=ordenar(linhasAd(),AD.sort,(r,k)=>r[k]); const pc=pode('adiantamentos','criar'), pe=pode('adiantamentos','editar'), px=pode('adiantamentos','excluir');
+    const qzs=[...new Set(adList().flatMap(a=>(a.parcelas||[]).map(p=>p.qid)))].sort().reverse();
+    return `<div class="xwrap">
+      <div class="row" style="justify-content:space-between"><span class="dim">Adiantamentos pagos aos agregados. Cada parcela entra sozinha nos descontos do fechamento da quinzena escolhida.</span>${pc?'<button class="primary" data-xa="novo">+ Novo adiantamento</button>':''}</div>
+      <div class="tiles">
+        <div class="tile"><div class="k">Adiantado (filtro)</div><div class="v">${fmt(rows.reduce((s,r)=>s+r.valor,0))}</div></div>
+        <div class="tile"><div class="k">Já descontado</div><div class="v">${fmt(rows.reduce((s,r)=>s+r.descontado,0))}</div></div>
+        <div class="tile"><div class="k">Saldo a descontar</div><div class="v">${fmt(rows.reduce((s,r)=>s+r.saldo,0))}</div></div>
+        <div class="tile"><div class="k">Atrasados</div><div class="v">${rows.filter(r=>r.sit==='atras').length}</div></div></div>
+      <section class="panel step"><div class="bar">
+        <label class="lbl grow">Pesquisar (agregado, cliente, locação, autorizado por, observação)<input id="xa_busca" value="${esc(AD.busca)}"></label>
+        <label class="lbl">Situação<select id="xa_sit" style="width:auto"><option value="">Todas</option>${Object.entries(SIT_AD).map(([k,[t]])=>`<option value="${k}" ${k===AD.sit?'selected':''}>${t}</option>`).join('')}</select></label>
+        <label class="lbl">Quinzena de desconto<select id="xa_qz" style="width:auto"><option value="">Todas</option>${qzs.map(q=>`<option value="${q}" ${q===AD.qz?'selected':''}>${qidLabel(q)}</option>`).join('')}</select></label>
+        <button class="primary" data-xa="pdf" style="align-self:flex-end">Gerar PDF</button></div></section>
+      <section class="panel">${!loaded.adiant?'<div class="empty">Carregando…</div>':`<div class="scroll"><table class="fit"><thead><tr>${thHtml(ACOLS,AD.sort,'a')}</tr></thead><tbody>
+        ${rows.length?rows.map(r=>`<tr${r.sit==='atras'?' class="xaus"':''}><td style="white-space:nowrap"><button data-xaed="${esc(r.id)}">${pe?'Editar':'Ver'}</button>${px?` <button class="danger" data-xadel="${esc(r.id)}">Excluir</button>`:''}</td>
+          <td class="mono">${br(r.data)}</td><td style="font-weight:600">${esc(r.nome)}${r.a.obs?`<div class="dim">${esc(r.a.obs)}</div>`:''}</td><td>${esc(r.cliente)}</td><td>${esc(r.locacao)}</td>
+          <td class="n" style="color:var(--magenta);font-weight:600">${fmt(r.valor)}</td><td class="n">${r.nParc}</td>
+          <td>${r.ps.map(p=>`<div style="white-space:nowrap;font-size:12.5px">${qidCurto(p.qid)} · ${fmt(p.valor)} ${p.baixa?`<span class="pill ok">Nº ${esc(p.baixa.numero)}</span>`:p.sit==='atras'?'<span class="pill bad">atrasada</span>':''}</div>`).join('')}</td>
+          <td class="n">${r.descontado?fmt(r.descontado):'—'}</td><td class="n" style="font-weight:600">${r.saldo?fmt(r.saldo):'—'}</td>
+          <td><span class="pill ${SIT_AD[r.sit][1]}">${SIT_AD[r.sit][0]}</span></td><td>${esc(r.autorizou||'—')}</td><td class="dim">${esc(r.por)}</td></tr>`).join('')
+          :`<tr><td colspan="${ACOLS.length}" class="empty">Nenhum adiantamento ${D.adiant.size?'no filtro atual':'lançado ainda'}.</td></tr>`}</tbody>
+        ${rows.length>1?`<tfoot><tr><td colspan="5">Total</td><td class="n">${fmt(rows.reduce((s,r)=>s+r.valor,0))}</td><td></td><td></td><td class="n">${fmt(rows.reduce((s,r)=>s+r.descontado,0))}</td><td class="n">${fmt(rows.reduce((s,r)=>s+r.saldo,0))}</td><td colspan="3"></td></tr></tfoot>`:''}</table></div>`}</section>
+      <p class="sub" style="font-size:12px">No fechamento, as parcelas aparecem já lançadas em “Descontos” (podem ser editadas ou removidas antes de gravar). Ao gravar, a parcela fica como descontada com o número do fechamento; se o fechamento for excluído, ela volta a ficar pendente. Parcela atrasada (quinzena já passou sem desconto) entra no próximo fechamento do agregado.</p></div>`;
+  }
+  // ---- modal novo / editar ----
+  function gerarParcelas(e){ const n=Math.max(1,Math.min(24,parseInt(e.nParc)||1)), tot=num2(parseMoney(e.valorTxt)||0), base=Math.floor(tot/n*100)/100;
+    const fixas=e.parcelas.filter(p=>p.trava); if(fixas.length){ toast('Há parcela já descontada: ajuste as demais manualmente.'); return; }
+    e.parcelas=Array.from({length:n},(_,i)=>({qid:qidShift(e.qid1||qidShift(qidAtual(),1),i),valorTxt:(i===n-1?num2(tot-base*(n-1)):base).toLocaleString('pt-BR',{minimumFractionDigits:2})})); }
+  function abrirAd(a){
+    const B=baixas();
+    if(a){ AD.edOrig=a; AD.ed={agregadoId:a.agregadoId,data:a.data||hojeIso(),valorTxt:num2(a.valor).toLocaleString('pt-BR',{minimumFractionDigits:2}),nParc:String((a.parcelas||[]).length||1),qid1:(a.parcelas&&a.parcelas[0]&&a.parcelas[0].qid)||qidShift(qidAtual(),1),obs:a.obs||'',
+      autorizou:a.autorizou||'',parcelas:(a.parcelas||[]).map((p,i)=>({qid:p.qid,valorTxt:num2(p.valor).toLocaleString('pt-BR',{minimumFractionDigits:2}),trava:B.get(a.id+'#'+i)||null}))}; }
+    else { AD.edOrig=null; AD.ed={agregadoId:'',data:hojeIso(),valorTxt:'',nParc:'1',qid1:qidShift(qidAtual(),1),obs:'',autorizou:'',parcelas:[]}; }
+    desenhaAd();
+  }
+  function errosAd(e){ const L=[]; if(!e.agregadoId) L.push('Selecione o agregado.'); if(!String(e.autorizou||'').trim()) L.push('Informe quem autorizou o adiantamento.'); const tot=num2(parseMoney(e.valorTxt)||0); if(!(tot>0)) L.push('Informe o valor do adiantamento.');
+    if(!e.parcelas.length) L.push('Gere as parcelas.'); if(e.parcelas.some(p=>!p.qid||!(num2(parseMoney(p.valorTxt))>0))) L.push('Toda parcela precisa de quinzena e valor.');
+    const soma=num2(e.parcelas.reduce((s,p)=>s+(parseMoney(p.valorTxt)||0),0)); if(tot>0&&e.parcelas.length&&Math.abs(soma-tot)>=0.01) L.push(`A soma das parcelas (${fmt(soma)}) é diferente do valor (${fmt(tot)}).`);
+    return L; }
+  function desenhaAd(){
+    let r=document.getElementById('xAdModal'); if(!AD.ed){ if(r) r.remove(); return; }
+    const novo=!r; if(!r){ r=document.createElement('div'); r.id='xAdModal'; r.className='modal'; document.body.appendChild(r); ligarAd(r); }
+    const e=AD.ed, podeSalvar=AD.edOrig?pode('adiantamentos','editar'):pode('adiantamentos','criar'), erros=errosAd(e);
+    const foco=document.activeElement&&r.contains(document.activeElement)?(document.activeElement.dataset.xae||''):''; const sel=document.activeElement&&document.activeElement.selectionStart;
+    r.innerHTML=`<div class="dialog" style="max-width:760px${novo?'':';animation:none'}"><h3>${AD.edOrig?'Adiantamento':'Novo adiantamento'}</h3>
+      ${podeSalvar?'':'<div class="notice">Somente leitura: seu perfil não pode alterar adiantamentos.</div>'}
+      <div class="xgrid">
+        <label class="lbl x2">Agregado<select data-xae="agregadoId" ${e.parcelas.some(p=>p.trava)?'disabled':''}>${optsAg(e.agregadoId)}</select></label>
+        <label class="lbl">Data do adiantamento<input type="date" data-xae="data" value="${esc(e.data)}"></label>
+        <label class="lbl">Valor adiantado<input data-xae="valorTxt" inputmode="decimal" placeholder="0,00" value="${esc(e.valorTxt)}"></label>
+        <label class="lbl">Nº de parcelas<input type="number" min="1" max="24" data-xae="nParc" value="${esc(e.nParc)}"></label>
+        <label class="lbl x2">Descontar a partir da<select data-xae="qid1">${opcoesQz(e.qid1)}</select></label>
+        <div style="align-self:end"><button type="button" data-xa-act="gerar">${e.parcelas.length?'Recalcular parcelas':'Gerar parcelas'}</button></div>
+        <label class="lbl x2">Autorizado por *<input data-xae="autorizou" value="${esc(e.autorizou)}" placeholder="Nome de quem autorizou" class="${String(e.autorizou||'').trim()?'':'xmiss'}"></label>
+        <label class="lbl" style="grid-column:1/-1">Observação<textarea data-xae="obs" rows="2" placeholder="Ex.: motivo do pedido, como foi solicitado">${esc(e.obs)}</textarea></label>
+      </div>
+      ${e.parcelas.length?`<div class="panel"><table class="fit"><thead><tr><th>Parcela</th><th>Quinzena de desconto</th><th class="n">Valor</th><th>Situação</th></tr></thead><tbody>
+        ${e.parcelas.map((p,i)=>`<tr><td>${i+1}/${e.parcelas.length}</td><td><select data-xap="${i}|qid" ${p.trava?'disabled':''}>${opcoesQz(p.qid)}</select></td><td class="n"><input data-xap="${i}|valorTxt" inputmode="decimal" value="${esc(p.valorTxt)}" style="text-align:right;max-width:140px" ${p.trava?'disabled':''}></td>
+          <td>${p.trava?`<span class="pill ok">Descontada no fechamento Nº ${esc(p.trava.numero)}</span>`:p.qid<qidAtual()?'<span class="pill bad">Atrasada</span>':'<span class="pill off">Pendente</span>'}</td></tr>`).join('')}</tbody></table></div>`:''}
+      ${erros.length&&(e.parcelas.length||e.agregadoId)?`<div class="notice warn">${erros.map(esc).join('<br>')}</div>`:''}
+      ${AD.edOrig&&AD.edOrig.porNome?`<div class="dim">Lançado por ${esc(AD.edOrig.porNome)}${AD.edOrig.em?' em '+new Date(AD.edOrig.em).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'}):''}</div>`:''}
+      <div class="actions">${AD.edOrig?'<button type="button" class="left" data-xa-act="pdf">Gerar PDF deste adiantamento</button>':''}<button type="button" data-xa-act="fechar">${podeSalvar?'Cancelar':'Fechar'}</button>${podeSalvar?`<button type="button" class="primary" data-xa-act="salvar" ${erros.length?'disabled':''}>Salvar</button>`:''}</div></div>`;
+    if(!podeSalvar) r.querySelectorAll('input,select').forEach(x=>x.disabled=true);
+    if(foco){ const el=r.querySelector(`[data-xae="${foco}"]`); if(el){ el.focus(); try{ if(sel!=null) el.setSelectionRange(sel,sel); }catch(_){} } }
+  }
+  function ligarAd(r){
+    const upd=ev=>{ const t=ev.target, e=AD.ed; if(!e) return;
+      if(t.dataset.xae){ const k=t.dataset.xae; e[k]=t.value; if((k==='valorTxt'||k==='nParc'||k==='qid1')&&ev.type==='change'&&!e.parcelas.some(p=>p.trava)) gerarParcelas(e); }
+      else if(t.dataset.xap){ const [i,k]=t.dataset.xap.split('|'); e.parcelas[+i][k]=t.value; }
+      else return;
+      if(ev.type==='change'||t.tagName==='SELECT') setTimeout(desenhaAd,0); else { clearTimeout(upd._t); upd._t=setTimeout(desenhaAd,250); } };
+    r.addEventListener('input',upd); r.addEventListener('change',upd);
+    r.addEventListener('click',async ev=>{ const b=ev.target.closest('[data-xa-act]'); if(!b) return; const act=b.dataset.xaAct, e=AD.ed;
+      if(act==='fechar'){ AD.ed=null; desenhaAd(); return; }
+      if(act==='gerar'){ gerarParcelas(e); desenhaAd(); return; }
+      if(act==='pdf'){ pdfUmAd(AD.edOrig); return; }
+      if(act==='salvar'){ if(errosAd(e).length) return; const ag=agPorId(e.agregadoId);
+        const body={agregadoId:e.agregadoId,agregado:ag?ag.nome:'',data:e.data,valor:num2(parseMoney(e.valorTxt)),obs:e.obs.trim(),autorizou:e.autorizou.trim(),parcelas:e.parcelas.map(p=>({qid:p.qid,valor:num2(parseMoney(p.valorTxt))}))};
+        let ok; if(AD.edOrig) ok=await gravar('adiant',AD.edOrig.id,{...AD.edOrig,...body,id:undefined,editadoPor:quem().porNome,editadoEm:new Date().toISOString()});
+        else ok=await gravar('adiant',uid(),{...body,...quem(),em:new Date().toISOString()});
+        if(ok){ toast(AD.edOrig?'Adiantamento atualizado.':'Adiantamento lançado.'); AD.ed=null; desenhaAd(); if(app()&&app().render) app().render(); } }
+    });
+  }
+  function pdfUmAd(a){
+    if(semPdf()||!a) return; const st=statusAd(a,baixas()), ag=agPorId(a.agregadoId);
+    const doc=montarPdf({titulo:'Adiantamento a agregado',subtitulo:`${ag?ag.nome:a.agregado} · ${ag?(ag.empresa||'')+' · '+(ag.locacao||''):''}`,
+      filtros:[`Data do adiantamento: ${br(a.data)}`,`Autorizado por ${a.autorizou||'—'}`,`Lançado por ${a.porNome||a.por||'—'}`].concat(a.obs?['Obs.: '+a.obs]:[]),
+      kpis:[['Valor adiantado',fmt(a.valor)],['Parcelas',st.ps.length],['Já descontado',fmt(st.descontado)],['Saldo a descontar',fmt(st.saldo)]],
+      head:['Parcela','Quinzena de desconto','Valor','Situação'],
+      body:st.ps.map(p=>[`${p.i+1}/${p.n}`,qidLabel(p.qid),fmt(p.valor),p.baixa?'Descontada no fechamento Nº '+p.baixa.numero:p.sit==='atras'?'Atrasada':'Pendente']),
+      foot:['Total','',fmt(a.valor),''],colStyles:{2:{halign:'right'}}});
+    previsualizar(doc,nomeArq('adiantamento-'+slugNome(ag?ag.nome:a.agregado)),'Pré-visualização · Adiantamento');
+  }
+  const slugNome = s => String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Za-z0-9]+/g,'-').replace(/^-|-$/g,'').toLowerCase().slice(0,60);
+  function pdfAd(){
+    if(semPdf()) return; const rows=ordenar(linhasAd(),AD.sort,(r,k)=>r[k]); if(!rows.length){ toast('Nada para gerar no filtro atual.'); return; }
+    const f=[]; if(AD.busca) f.push('Pesquisa: '+AD.busca); if(AD.sit) f.push('Situação: '+SIT_AD[AD.sit][0]); if(AD.qz) f.push('Quinzena: '+qidLabel(AD.qz));
+    const doc=montarPdf({titulo:'Adiantamentos a agregados',filtros:f.length?f:['Nenhum'],
+      kpis:[['Adiantado',fmt(rows.reduce((s,r)=>s+r.valor,0))],['Já descontado',fmt(rows.reduce((s,r)=>s+r.descontado,0))],['Saldo a descontar',fmt(rows.reduce((s,r)=>s+r.saldo,0))],['Atrasados',rows.filter(r=>r.sit==='atras').length]],
+      head:['Data','Agregado','Cliente','Locação','Valor','Parcelas','Descontado','Saldo','Situação','Autorizado por'],
+      body:rows.map(r=>[br(r.data),r.nome+(r.a.obs?'\n'+r.a.obs:''),r.cliente,r.locacao,fmt(r.valor),r.ps.map(p=>`${qidCurto(p.qid)} ${fmt(p.valor)}${p.baixa?' (Nº '+p.baixa.numero+')':p.sit==='atras'?' (atrasada)':''}`).join('\n'),fmt(r.descontado),fmt(r.saldo),SIT_AD[r.sit][0],r.autorizou||'—']),
+      foot:['Total','','','',fmt(rows.reduce((s,r)=>s+r.valor,0)),'',fmt(rows.reduce((s,r)=>s+r.descontado,0)),fmt(rows.reduce((s,r)=>s+r.saldo,0)),'',''],
+      colStyles:{4:{halign:'right'},6:{halign:'right'},7:{halign:'right'},5:{cellWidth:150}}});
+    previsualizar(doc,nomeArq('adiantamentos'),'Pré-visualização · Adiantamentos');
+  }
   /* =====================================================================
      montagem, eventos e redesenho
      ===================================================================== */
@@ -613,7 +746,7 @@ window.__ext = (function(){
     if(!root||!document.body.contains(root)) return;
     const ae=document.activeElement; const foco=ae&&root.contains(ae)?(ae.id||(ae.dataset&&(ae.dataset.xq&&ae.closest('[data-xkey]')?'q:'+ae.closest('[data-xkey]').dataset.xkey+':'+ae.dataset.xq:ae.dataset.xemp?'e:'+ae.dataset.xemp:''))):'';
     const sel=ae&&ae.selectionStart;
-    root.innerHTML = tabAtual==='frequencia'?vFrequencia():vNfs();
+    root.innerHTML = tabAtual==='frequencia'?vFrequencia():tabAtual==='adiant'?vAdiant():vNfs();
     if(foco){ let el=null; if(foco.startsWith('q:')){ const [,k,f]=foco.split(':'); el=root.querySelector(`[data-xkey="${k}"] [data-xq="${f}"]`); } else if(foco.startsWith('e:')) el=root.querySelector(`[data-xemp="${foco.slice(2)}"]`); else el=document.getElementById(foco);
       if(el){ el.focus(); try{ if(sel!=null) el.setSelectionRange(sel,sel); }catch(e){} } }
   }
@@ -623,7 +756,10 @@ window.__ext = (function(){
   function ligar(r){
     r.addEventListener('click',async e=>{
       const t=e.target;
-      const so=t.closest('[data-xsort]'); if(so){ const [g,k]=so.dataset.xsort.split('|'); const key={d:'sortD',f:'sortF',r:'sortR'}[g]; if(key) F[key]=toggleSort(F[key],k); else { const nk={l:'sortL',c:'sortC',e:'sortE'}[g]; N[nk]=toggleSort(N[nk],k); } redesenhar(); return; }
+      const so=t.closest('[data-xsort]'); if(so){ const [g,k]=so.dataset.xsort.split('|'); const key={d:'sortD',f:'sortF',r:'sortR'}[g]; if(g==='a') AD.sort=toggleSort(AD.sort,k); else if(key) F[key]=toggleSort(F[key],k); else { const nk={l:'sortL',c:'sortC',e:'sortE'}[g]; N[nk]=toggleSort(N[nk],k); } redesenhar(); return; }
+      const xa=t.closest('[data-xa]'); if(xa){ if(xa.dataset.xa==='novo') abrirAd(null); else if(xa.dataset.xa==='pdf') pdfAd(); return; }
+      const xae=t.closest('[data-xaed]'); if(xae){ const a=adList().find(x=>x.id===xae.dataset.xaed); if(a) abrirAd(a); return; }
+      const xad=t.closest('[data-xadel]'); if(xad){ const a=adList().find(x=>x.id===xad.dataset.xadel); if(!a) return; const st=statusAd(a,baixas()); if(st.ps.some(p=>p.baixa)){ alert('Este adiantamento já tem parcela descontada em fechamento. Exclua antes o desconto no fechamento, ou ajuste as parcelas pendentes em Editar.'); return; } if(!confirm(`Excluir o adiantamento de ${fmt(a.valor)} de ${a.agregado}? Esta ação não pode ser desfeita.`)) return; if(await apagar('adiant',a.id)){ toast('Adiantamento excluído.'); if(app()&&app().render) app().render(); } return; }
       const fs=t.closest('[data-xfsub]'); if(fs){ F.sub=fs.dataset.xfsub; redesenhar(); return; }
       const ns=t.closest('[data-xnsub]'); if(ns){ N.sub=ns.dataset.xnsub; N.empEd=null; redesenhar(); return; }
       const mk=t.closest('[data-xmark]'); if(mk){ const [id,p]=mk.dataset.xmark.split('|'); marcar(id,p); return; }
@@ -654,8 +790,8 @@ window.__ext = (function(){
     const onVal=e=>{ const el=e.target, id=el.id;
       const map={xf_data:['F','data'],xf_cli:['F','cli'],xf_loc:['F','loc'],xf_so:['F','so'],xf_busca:['F','busca'],xg_mes:['F','fMes'],xg_qz:['F','fQz'],xg_cli:['F','fCli'],xg_ag:['F','fAg'],xg_most:['F','fMost'],
         xr_de:['F','rDe'],xr_ate:['F','rAte'],xr_per:['F','rPer'],xr_busca:['F','rBusca'],xn_refmes:['N','refMes'],xn_refqz:['N','refQz'],xn_colar:['N','colar'],
-        xl_busca:['N','lBusca'],xl_de:['N','lDe'],xl_ate:['N','lAte'],xl_ref:['N','lRef'],xl_reg:['N','lReg'],xl_emp:['N','lEmp'],xc_mes:['N','cMes'],xc_qz:['N','cQz'],xc_sit:['N','cSit'],xc_cli:['N','cCli'],xc_busca:['N','cBusca']};
-      if(map[id]){ const [o,k]=map[id]; (o==='F'?F:N)[k]=el.value; if(id==='xf_data'&&!el.value) return; if(id==='xg_cli') F.fAg=''; if(id==='xf_cli') F.loc=''; if(id==='xn_colar') return; clearTimeout(onVal._t); onVal._t=setTimeout(redesenhar, (e.type==='input'&&(el.type==='text'||el.type==='search'))?150:0); return; }
+        xl_busca:['N','lBusca'],xl_de:['N','lDe'],xl_ate:['N','lAte'],xl_ref:['N','lRef'],xl_reg:['N','lReg'],xl_emp:['N','lEmp'],xc_mes:['N','cMes'],xc_qz:['N','cQz'],xc_sit:['N','cSit'],xc_cli:['N','cCli'],xc_busca:['N','cBusca'],xa_busca:['A','busca'],xa_sit:['A','sit'],xa_qz:['A','qz']};
+      if(map[id]){ const [o,k]=map[id]; (o==='F'?F:o==='A'?AD:N)[k]=el.value; if(id==='xf_data'&&!el.value) return; if(id==='xg_cli') F.fAg=''; if(id==='xf_cli') F.loc=''; if(id==='xn_colar') return; clearTimeout(onVal._t); onVal._t=setTimeout(redesenhar, (e.type==='input'&&(el.type==='text'||el.type==='search'))?150:0); return; }
       if(el.dataset.xemp){ const [i,k]=el.dataset.xemp.split('|'); N.empEd=N.empEd||empresas().map(x=>({...x})); N.empEd[+i][k]=k==='cnpj'?dig(el.value):el.value; return; }
       if(el.dataset.xq&&e.type==='change'){ const card=el.closest('[data-xkey]'); const it=card&&N.fila.find(f=>f.key===card.dataset.xkey); if(!it) return; aplicaCampo(it,el.dataset.xq,el.value); setTimeout(redesenhar,0); }
     };
