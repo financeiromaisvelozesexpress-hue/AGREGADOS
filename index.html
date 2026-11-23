@@ -1,6 +1,8 @@
 <!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex"><style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px system-ui,-apple-system,"Segoe UI",sans-serif}img{max-width:100%}[hidden]{display:none!important}</style></head><body>
 <title>Pagamento de Agregados</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -247,6 +249,8 @@ a{color:var(--magenta)}
       <button role="tab" data-tab="agregados" aria-selected="false">Agregados</button>
       <button role="tab" data-tab="locacoes" aria-selected="false">Locações</button>
       <button role="tab" data-tab="feriados" aria-selected="false">Feriados</button>
+      <button role="tab" data-tab="frequencia" aria-selected="false">Frequência</button>
+      <button role="tab" data-tab="nfs" aria-selected="false">Notas fiscais</button>
       <button role="tab" data-tab="usuarios" aria-selected="false">Usuários e acessos</button>
     </nav>
   </header>
@@ -339,11 +343,11 @@ function criarDb(){
 
 /* ---------- controle de acesso (perfis MASTER / Operacional / Consultor) ---------- */
 window.__rbac = (function(){
-  const MODS = [['painel','Painel'],['agregados','Agregados'],['locacoes','Locações'],['feriados','Feriados'],['fechamentos','Fechamentos'],['custos','Custos avulsos']];
+  const MODS = [['painel','Painel'],['agregados','Agregados'],['locacoes','Locações'],['feriados','Feriados'],['fechamentos','Fechamentos'],['custos','Custos avulsos'],['frequencia','Frequência'],['nfs','Notas fiscais (NFS)']];
   const PERFIS = {master:'MASTER', operacional:'Operacional', consultor:'Consultor'};
   const TAB_MOD = {fechamento:['fechamentos','criar'], historico:['fechamentos','ver'], custos:['custos','ver'], painel:['painel','ver'],
-    agregados:['agregados','ver'], locacoes:['locacoes','ver'], feriados:['feriados','ver'], usuarios:['usuarios','ver']};
-  const ORDEM = ['fechamento','historico','custos','painel','agregados','locacoes','feriados','usuarios'];
+    agregados:['agregados','ver'], locacoes:['locacoes','ver'], feriados:['feriados','ver'], frequencia:['frequencia','ver'], nfs:['nfs','ver'], usuarios:['usuarios','ver']};
+  const ORDEM = ['fechamento','historico','custos','painel','agregados','locacoes','feriados','frequencia','nfs','usuarios'];
   // seletor -> [módulo, ação]. Sem a permissão: o elemento some e o clique é barrado.
   const REGRAS = [
     ['[data-tab="fechamento"],[data-act="fecharPend"],[data-act="irNovo"],[data-act="gravar"]','fechamentos','criar'],
@@ -357,6 +361,7 @@ window.__rbac = (function(){
     ['[data-tab="agregados"]','agregados','ver'], ['[data-act="novoAg"]','agregados','criar'],
     ['[data-tab="locacoes"]','locacoes','ver'], ['[data-act="novaLoc"]','locacoes','criar'],
     ['[data-tab="feriados"]','feriados','ver'], ['[data-act="novoFer"]','feriados','criar'],
+    ['[data-tab="frequencia"]','frequencia','ver'], ['[data-tab="nfs"]','nfs','ver'],
     ['[data-act="delAsk"],[data-act="delYes"]','usuarios','excluir'],
     ['[data-tab="usuarios"],[data-act="backupExp"],[data-act="backupImp"]','usuarios','ver']
   ];
@@ -476,7 +481,7 @@ window.__rbac = (function(){
           <tr><th rowspan="2">Módulo</th><th colspan="3" style="text-align:center">Operacional</th><th style="text-align:center">Consultor</th></tr>
           <tr><th style="text-align:center">Ver</th><th style="text-align:center">Criar</th><th style="text-align:center">Editar</th><th style="text-align:center">Ver</th></tr></thead>
         <tbody>${MODS.map(([m,n])=>`<tr><td style="font-weight:600">${n}</td>${cb('operacional',m,'ver')}${cb('operacional',m,'criar',m==='painel')}${cb('operacional',m,'editar',m==='painel')}${cb('consultor',m,'ver')}</tr>`).join('')}</tbody></table></div>
-        <p class="sub" style="font-size:12px;padding:0 14px 12px">Ao liberar Criar ou Editar em Fechamentos, Ver em Agregados, Locações e Feriados é ligado automaticamente (o cálculo precisa deles). O mesmo vale para Custos avulsos com Agregados e Locações.</p>
+        <p class="sub" style="font-size:12px;padding:0 14px 12px">Ao liberar Criar ou Editar em Fechamentos, Ver em Agregados, Locações e Feriados é ligado automaticamente (o cálculo precisa deles). O mesmo vale para Custos avulsos com Agregados e Locações, e para Frequência e Notas fiscais com Agregados, Locações e Feriados.</p>
       </div>
       <div class="panel"><div class="ph"><h2>Últimas alterações de acesso</h2></div>
         <div class="scroll"><table style="min-width:620px"><thead><tr><th>Quando</th><th>Quem</th><th>O quê</th><th>Ação</th></tr></thead>
@@ -518,7 +523,7 @@ window.__rbac = (function(){
     });
     recarregar();
   }
-  return {aplicar, aviso, primeiraAba, usaPainelRpc, painelDados, montarUsuarios, pode};
+  return {aplicar, aviso, primeiraAba, usaPainelRpc, painelDados, montarUsuarios, pode, ac:()=>AC};
 })();
 
 window.__conectar = () => new Promise(resolve=>{
@@ -536,6 +541,7 @@ window.__conectar = () => new Promise(resolve=>{
 });
 })();
 </script>
+<script src="/extras.js"></script>
 
 <script>
 (function(){
@@ -617,6 +623,7 @@ function calcAg(a,start,end,h,aj){
     de:s<=e?iso(s):'',ate:s<=e?iso(e):'',diariaUtil:num(a.diariaUtil),diariaFds:num(a.diariaFds),dias,nT:c('T'),nD:c('D'),nN:c('N'),
     subtotal,descontos,acrescimos,totDesc,totAcr,total:subtotal+totAcr-totDesc};
 }
+window.__app = {S, calcAg, noPeriodo};
 function selecionados(){ const {start,end}=periodo(); return UI.sel.map(id=>S.agregados.find(a=>a.id===id)).filter(Boolean).map(a=>calcAg(a,start,end,UI.q.h,UI.aj[a.id])); }
 
 /* ---------- render ---------- */
@@ -630,6 +637,7 @@ function render(){
   else if(UI.tab==='custos') v.innerHTML=viewCustos();
   else if(UI.tab==='agregados') v.innerHTML=viewAgregados();
   else if(UI.tab==='locacoes') v.innerHTML=viewLocacoes();
+  else if(UI.tab==='frequencia'||UI.tab==='nfs'){ if(window.__ext) window.__ext.mostrar(UI.tab,v); else v.innerHTML='<div class="empty">Módulo não carregou. Recarregue a página.</div>'; }
   else if(UI.tab==='usuarios'){ if(!v.querySelector('#rbacRoot')){ v.innerHTML=''; window.__rbac.montarUsuarios(v); } } else if(UI.tab==='semacesso') v.innerHTML='<div class="empty" style="padding:40px">Nenhum módulo liberado para o seu perfil. Fale com o MASTER.</div>'; else v.innerHTML=viewFeriados();
   if(focusId){ const el=document.getElementById(focusId); if(el){ el.focus(); try{ if(sel!=null) el.setSelectionRange(sel,sel);}catch(e){} } }
 }
@@ -1422,7 +1430,7 @@ document.addEventListener('mousemove',e=>{ const t=document.getElementById('ctip
 /* ---------- inicialização ---------- */
 render();
 (async()=>{
-  try{ db = await window.__conectar(); }catch(e){ console.error(e); db=null; } if(db){ UI.tab=window.__rbac.primeiraAba(UI.tab); render(); if(window.__rbac.usaPainelRpc()) window.__rbac.painelDados().then(d=>{ PD=d; render(); }).catch(console.error); }
+  try{ db = await window.__conectar(); }catch(e){ console.error(e); db=null; } if(db){ UI.tab=window.__rbac.primeiraAba(UI.tab); if(window.__ext) window.__ext.conectar(); render(); if(window.__rbac.usaPainelRpc()) window.__rbac.painelDados().then(d=>{ PD=d; render(); }).catch(console.error); }
   if(!db){ const n=document.getElementById('notice'); n.textContent='Sem acesso ao banco de dados. Entre com um e-mail autorizado para ver e gravar os dados.'; n.hidden=false; S.loaded={a:true,l:true,f:true,q:true}; render(); return; }
   const sub=(col,key,flag)=>db.collection(col).onSnapshot(snap=>{ S[key]=snap.docs.map(d=>({...d.data(),id:d.id})); S.loaded[flag]=true; if(!document.activeElement||!document.activeElement.dataset||!document.activeElement.dataset.line&&!document.activeElement.dataset.dv) render(); },e=>console.error(col,e));
   sub('agregados','agregados','a'); sub('locacoes','locacoes','l'); sub('feriados','feriados','f'); sub('custos','custos','c');
