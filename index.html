@@ -184,7 +184,7 @@ th.sort:hover{color:var(--fg)}
 .detail h4{margin:0;font:500 11px var(--f-body);letter-spacing:.8px;text-transform:uppercase;color:var(--muted)}
 .cols2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 @media (max-width:700px){.cols2{grid-template-columns:1fr}}
-@media (max-width:900px){.layout{grid-template-columns:1fr}.side{position:static}}
+@media (max-width:1200px){.layout{grid-template-columns:1fr}.side{position:static}}
 @media (max-width:560px){.grid2{grid-template-columns:1fr}.qnav b{min-width:0;font-size:16px}h1{font-size:24px}}
 @media (prefers-reduced-motion:no-preference){.dialog{animation:pop .15s ease-out}@keyframes pop{from{transform:translateY(6px);opacity:.6}}}
 
@@ -233,6 +233,15 @@ a{color:var(--magenta)}
 .hist th,.hist td{padding:8px 10px}
 .dialog:has(.hist){max-width:760px}
 .sumbox .tile{text-align:left;align-items:flex-start}
+/* tabelas que cabem na largura da tela (sem rolagem lateral) */
+table.fit{min-width:0;table-layout:auto}
+table.fit th{white-space:normal;line-height:1.25}
+table.fit th,table.fit td{padding:8px 8px}
+table.fit td.n{white-space:nowrap}
+table.conf .pill{white-space:normal;font-size:11px;padding:2px 8px;line-height:1.3}
+table.conf td:last-child button{padding:6px 10px}
+table.conf .detail{max-width:100%;overflow:hidden}
+@media (max-width:1100px){table.fit{font-size:12.5px}}
 </style>
 
 <div class="wrap">
@@ -687,7 +696,7 @@ function viewNovo(){
       ${nFechados?`<p class="sub" style="font-size:12.5px">${nFechados} agregado${nFechados>1?'s':''} já ${nFechados>1?'têm':'tem'} fechamento nesta quinzena e não ${nFechados>1?'aparecem':'aparece'} na lista. <a href="#" data-act="verHist" style="color:var(--accent)">Ver fechamentos</a></p>`:''}
     </section>
     ${rows.length?`<section class="panel"><div class="ph"><h2>3 · Conferência</h2><span style="color:var(--muted);font-size:12px">Clique no dia para mudar a situação; edite o valor para diárias de período reduzido${(()=>{const n=rows.reduce((t,r)=>t+r.dias.filter(d=>d.falta).length,0); return n?` · <b style="color:var(--magenta)">${n} falta${n>1?'s':''} da aba Frequência aplicada${n>1?'s':''}</b>`:'';})()}</span></div>
-      <div class="scroll"><table style="min-width:640px"><thead><tr><th>Agregado</th><th class="n">Trab. / Disp. / Não trab.</th><th class="n">Diárias</th><th class="n">Acréscimos</th><th class="n">Descontos</th><th class="n">Total</th><th class="n">NFS da quinzena</th><th></th></tr></thead>
+      <div class="scroll"><table class="fit conf"><thead><tr><th>Agregado</th><th class="n">Trab. / Disp. / Não trab.</th><th class="n">Diárias</th><th class="n">Acréscimos</th><th class="n">Descontos</th><th class="n">Total</th><th class="n">NFS da quinzena</th><th></th></tr></thead>
       <tbody>${rows.map(r=>{const open=UI.det[r.agregadoId]??(rows.length===1); const aj=UI.aj[r.agregadoId]||{}; return `<tr><td><div style="font-weight:600">${esc(r.nome)}</div><div class="dim">${esc(r.locacao)}${r.cc?' · <span class="mono">'+esc(r.cc)+'</span>':''}</div></td>
         <td class="n mono">${r.nT} / ${r.nD} / ${r.nN}</td><td class="n">${fmt(r.subtotal)}</td><td class="n">${r.totAcr?'+ '+fmt(r.totAcr):'—'}</td><td class="n">${r.totDesc?'− '+fmt(r.totDesc):'—'}</td><td class="n" style="font-weight:600">${fmt(r.total)}</td><td class="n">${nfsHtml(r)}</td>
         <td class="n"><button data-act="det" data-id="${r.agregadoId}">${open?'Recolher':'Detalhar'}</button></td></tr>
@@ -826,6 +835,7 @@ function viewPainel(){
   const porLoc={};
   lancamentos().forEach(({f,r})=>{ const a=agg[f.qid]; if(!a) return; if(UI.pLoc&&r.locacao!==UI.pLoc) return; a.v+=num(r.total); a.n++; a.sub+=num(r.subtotal); a.acr+=num(r.totAcr); a.desc+=num(r.totDesc); a.ags.add(r.agregadoId);
     const k=r.locacao||'Sem locação'; porLoc[k]=porLoc[k]||{k,v:0,n:0}; porLoc[k].v+=num(r.total); porLoc[k].n++; });
+  S.nfs.forEach(n=>{ if(!n.refMes||!n.quinzena) return; const a=agg[n.refMes+'-Q'+n.quinzena]; if(!a) return; const ag=S.agregados.find(x=>x.id===n.agregadoId); const loc=(ag&&ag.locacao)||n.locacao||''; if(UI.pLoc&&loc!==UI.pLoc) return; a.nfs=(a.nfs||0)+num(n.valor); a.nNfs=(a.nNfs||0)+1; });
   S.custos.forEach(c=>{ const a=agg[c.qid]; if(!a) return; if(UI.pLoc&&c.locacao!==UI.pLoc) return; a.av+=num(c.valor); const k=c.locacao||'Sem locação'; porLoc[k]=porLoc[k]||{k,v:0,n:0}; porLoc[k].v+=num(c.valor); porLoc[k].n++; });
   const rows=Object.values(agg);
   const totAg=rows.reduce((s,a)=>s+a.v,0), totAv=rows.reduce((s,a)=>s+a.av,0), total=totAg+totAv, lanc=rows.reduce((s,a)=>s+a.n,0);
@@ -879,13 +889,13 @@ function viewPainel(){
       ${grpData.length?`<div class="breakdown">${grpData.map(g=>`<div class="brow grp" data-tip="${esc('<b>'+esc(g.k)+'</b><br>'+fmt(g.v)+' · '+(totGrp?(g.v/totGrp*100).toLocaleString('pt-BR',{maximumFractionDigits:1}):0)+'% do total<br>'+g.locs.map(esc).join(', '))}"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(g.k)}</span><div class="track"><div class="fill" style="width:${(g.v/Math.max(...grpData.map(x=>x.v),1)*100).toFixed(1)}%"></div></div><span class="val">${fmt(g.v)} <span style="color:var(--muted);font-weight:400;font-size:12px">${totGrp?(g.v/totGrp*100).toLocaleString('pt-BR',{maximumFractionDigits:1}):0}%</span></span></div>`).join('')}</div>`:'<div class="empty">Sem dados no período.</div>'}
     </div>
     <div class="panel"><div class="ph"><h2>Resultado por locação</h2><div class="row"><span style="color:var(--muted);font-size:12px">Período</span><select id="pMes" style="width:auto">${meses.map(m=>{const [y,mo]=m.split('-').map(Number);return `<optgroup label="${MESES[mo-1]} ${y}"><option value="${m}" ${m===mes?'selected':''}>Mês inteiro · ${MESES[mo-1]} ${y}</option><option value="${m}-Q1" ${m+'-Q1'===mes?'selected':''}>1ª quinzena · ${pad(mo)}/${y}</option><option value="${m}-Q2" ${m+'-Q2'===mes?'selected':''}>2ª quinzena · ${pad(mo)}/${y}</option></optgroup>`;}).join('')}</select></div></div>
-      <div class="scroll"><table style="min-width:960px"><thead><tr><th>Locação</th><th class="n">${isQ?'Receita (50% do contrato)':'Receita (contrato mensal)'}</th><th class="n">Agregados</th><th class="n">Custos avulsos</th><th class="n">Custo total</th><th class="n">Resultado</th><th class="n">Margem</th><th class="n" title="Dias marcados como não trabalhados (exceto feriados) nos fechamentos do mês">Dias descobertos</th><th class="n">Esporádicos lançados</th></tr></thead>
+      <div class="scroll"><table class="fit"><thead><tr><th>Locação</th><th class="n">${isQ?'Receita (50% do contrato)':'Receita (contrato mensal)'}</th><th class="n">Agregados</th><th class="n">Custos avulsos</th><th class="n">Custo total</th><th class="n">Resultado</th><th class="n">Margem</th><th class="n" title="Dias marcados como não trabalhados (exceto feriados) nos fechamentos do mês">Dias descobertos</th><th class="n">Esporádicos lançados</th></tr></thead>
       <tbody>${resRows.length?resRows.map(o=>{const ct=o.ag+o.av, r=o.contr-ct; return `<tr><td style="font-weight:600">${esc(o.k)}</td><td class="n">${o.contr?fmt(o.contr):'—'}</td><td class="n">${fmt(o.ag)}</td><td class="n">${fmt(o.av)}</td><td class="n">${fmt(ct)}</td><td class="n ${o.contr?(r<0?'neg':'pos'):''}" style="font-weight:600">${o.contr?fmt(r):'—'}</td><td class="n">${o.contr?(r/o.contr*100).toLocaleString('pt-BR',{maximumFractionDigits:1})+'%':'—'}</td><td class="n">${o.desc||'—'}</td><td class="n ${o.desc&&o.esp<o.desc?'neg':''}">${o.esp?o.esp.toLocaleString('pt-BR'):'—'}</td></tr>`;}).join(''):`<tr><td colspan="9" class="empty">Sem dados para ${perLabel}.</td></tr>`}</tbody>
       ${resRows.length?`<tfoot><tr><td>Total</td><td class="n">${fmt(rt('contr'))}</td><td class="n">${fmt(rt('ag'))}</td><td class="n">${fmt(rt('av'))}</td><td class="n">${fmt(rt('ag')+rt('av'))}</td><td class="n">${fmt(rt('contr')-rt('ag')-rt('av'))}</td><td></td><td class="n">${rt('desc')}</td><td class="n">${rt('esp').toLocaleString('pt-BR')}</td></tr></tfoot>`:''}</table></div>
       <p class="sub" style="font-size:12px;padding:0 14px 12px">O cliente paga o contrato em duas parcelas iguais, uma por quinzena. Resultado = receita do período (contrato mensal, ou 50% dele na quinzena) − (agregados fechados + custos avulsos). Locações sem valor de contrato mostram só os custos. Esporádicos em vermelho indicam menos lançamentos do que dias descobertos.</p></div>
-    <div class="panel"><div class="ph"><h2>Totais por quinzena</h2></div><div class="scroll"><table style="min-width:720px"><thead><tr><th>Quinzena</th><th class="n">Lançamentos</th><th class="n">Agregados</th><th class="n">Diárias</th><th class="n">Acréscimos</th><th class="n">Descontos</th><th class="n">Fechamentos</th><th class="n">Custos avulsos</th><th class="n">Total</th></tr></thead>
-      <tbody>${[...rows].reverse().map(a=>`<tr><td>${qLabel(a.q)}</td><td class="n">${a.n}</td><td class="n">${a.ags.size}</td><td class="n">${fmt(a.sub)}</td><td class="n">${fmt(a.acr)}</td><td class="n">${fmt(a.desc)}</td><td class="n">${fmt(a.v)}</td><td class="n">${fmt(a.av)}</td><td class="n" style="font-weight:600">${fmt(a.v+a.av)}</td></tr>`).join('')}</tbody>
-      <tfoot><tr><td>Total</td><td class="n">${lanc}</td><td></td><td class="n">${fmt(rows.reduce((s,a)=>s+a.sub,0))}</td><td class="n">${fmt(rows.reduce((s,a)=>s+a.acr,0))}</td><td class="n">${fmt(rows.reduce((s,a)=>s+a.desc,0))}</td><td class="n">${fmt(totAg)}</td><td class="n">${fmt(totAv)}</td><td class="n">${fmt(total)}</td></tr></tfoot></table></div></div>
+    <div class="panel"><div class="ph"><h2>Totais por quinzena</h2><span style="color:var(--muted);font-size:12px">NFS importadas = soma das notas lançadas na aba Notas fiscais para a quinzena · diferença = NFS − fechamentos</span></div><div class="scroll"><table class="fit"><thead><tr><th>Quinzena</th><th class="n">Lanç.</th><th class="n">Agreg.</th><th class="n">Diárias</th><th class="n">Acréscimos</th><th class="n">Descontos</th><th class="n">Fechamentos</th><th class="n">NFS importadas</th><th class="n">Diferença</th><th class="n">Custos avulsos</th><th class="n">Total</th></tr></thead>
+      <tbody>${[...rows].reverse().map(a=>`<tr><td>${qLabel(a.q)}</td><td class="n">${a.n}</td><td class="n">${a.ags.size}</td><td class="n">${fmt(a.sub)}</td><td class="n">${fmt(a.acr)}</td><td class="n">${fmt(a.desc)}</td><td class="n">${fmt(a.v)}</td><td class="n" style="color:var(--magenta);font-weight:600" title="${a.nNfs||0} NFS">${a.nfs?fmt(a.nfs):'—'}</td><td class="n ${a.nfs&&Math.abs(a.nfs-a.v)>=0.01?(a.nfs<a.v?'neg':'pos'):''}">${a.nfs||a.v?(Math.abs((a.nfs||0)-a.v)<0.01?'—':fmt((a.nfs||0)-a.v)):'—'}</td><td class="n">${fmt(a.av)}</td><td class="n" style="font-weight:600">${fmt(a.v+a.av)}</td></tr>`).join('')}</tbody>
+      <tfoot><tr><td>Total</td><td class="n">${lanc}</td><td></td><td class="n">${fmt(rows.reduce((s,a)=>s+a.sub,0))}</td><td class="n">${fmt(rows.reduce((s,a)=>s+a.acr,0))}</td><td class="n">${fmt(rows.reduce((s,a)=>s+a.desc,0))}</td><td class="n">${fmt(totAg)}</td><td class="n">${fmt(rows.reduce((s,a)=>s+(a.nfs||0),0))}</td><td class="n">${fmt(rows.reduce((s,a)=>s+(a.nfs||0),0)-totAg)}</td><td class="n">${fmt(totAv)}</td><td class="n">${fmt(total)}</td></tr></tfoot></table></div></div>
   </div>`;
 }
 
