@@ -1,5 +1,6 @@
 <!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex"><style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px system-ui,-apple-system,"Segoe UI",sans-serif}img{max-width:100%}[hidden]{display:none!important}</style></head><body>
 <title>Pagamento de Agregados</title>
+<script>try{var __t=localStorage.getItem("tema");if(__t==="dark"||__t==="light")document.documentElement.setAttribute("data-theme",__t);}catch(e){}</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -236,6 +237,13 @@ a{color:var(--magenta)}
 .hist th,.hist td{padding:8px 10px}
 .dialog:has(.hist){max-width:760px}
 .sumbox .tile{text-align:left;align-items:flex-start}
+/* seletor de tema (automático / claro / escuro) */
+.tema{display:inline-flex;align-items:center;gap:0;margin-top:8px;border:1px solid var(--line);border-radius:4px;overflow:hidden;font-size:12px}
+.tema span{padding:4px 8px;color:var(--muted);background:var(--field)}
+.tema button{border:0;border-left:1px solid var(--line);border-radius:0;background:var(--surface);color:var(--muted);padding:4px 10px;font:600 12px var(--f-body)}
+.tema button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+:root[data-theme="dark"]{color-scheme:dark}
+:root[data-theme="light"]{color-scheme:light}
 /* tabelas que cabem na largura da tela (sem rolagem lateral) */
 table.fit{min-width:0;table-layout:auto}
 table.fit th{white-space:normal;line-height:1.25}
@@ -252,6 +260,7 @@ table.conf .detail{max-width:100%;overflow:hidden}
     <div>
       <h1>Pagamento de Agregados</h1>
       <p class="sub">Fechamento quinzenal por agregado, feito após a emissão da NFS do período.</p>
+      <div class="tema" role="group" aria-label="Tema da tela"><span>Tema</span><button type="button" data-tema="auto" title="Segue o modo claro/escuro do computador">Automático</button><button type="button" data-tema="light">☀ Claro</button><button type="button" data-tema="dark">☾ Escuro</button></div>
     </div>
     <nav class="tabs" role="tablist" id="tabs">
       <button role="tab" data-tab="fechamento" aria-selected="true">Novo fechamento</button>
@@ -1481,4 +1490,11 @@ render();
 })();
 </script>
 
+<script>
+(function(){ const pinta=()=>{ const t=document.documentElement.getAttribute("data-theme")||"auto"; document.querySelectorAll("[data-tema]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.tema===t))); };
+  document.addEventListener("click",e=>{ const b=e.target.closest&&e.target.closest("[data-tema]"); if(!b) return; const t=b.dataset.tema;
+    if(t==="auto") document.documentElement.removeAttribute("data-theme"); else document.documentElement.setAttribute("data-theme",t);
+    try{ if(t==="auto") localStorage.removeItem("tema"); else localStorage.setItem("tema",t); }catch(_){} pinta(); });
+  pinta(); })();
+</script>
 </body></html>
