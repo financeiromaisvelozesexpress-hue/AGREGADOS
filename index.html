@@ -691,7 +691,8 @@ function viewNovo(){
   const lista=elegiveis(); const fx=fechadosNaQ(qId(UI.q));
   const nFechados=S.agregados.filter(a=>noPeriodo(a,start,end)&&fx.has(a.id)).length;
   const filtro=UI.busca.toLowerCase();
-  const vis=lista.filter(a=>!filtro||(a.nome+' '+ccDe(a.locacao,UI.q.h)+' '+(a.locacao||'')).toLowerCase().includes(filtro));
+  const comNfs=lista.filter(a=>nfsDoAg(a.id,UI.q).length).length;
+  const vis=lista.filter(a=>(!filtro||(a.nome+' '+ccDe(a.locacao,UI.q.h)+' '+(a.locacao||'')).toLowerCase().includes(filtro))&&(!UI.soNfs||nfsDoAg(a.id,UI.q).length));
   const rows=selecionados(); const tot=rows.reduce((s,r)=>s+r.total,0);
   const lote=UI.modo==='lote';
   const semNfs=rows.filter(r=>!nfsDoAg(r.agregadoId,UI.q).length);
@@ -709,9 +710,9 @@ function viewNovo(){
       <label class="lbl" style="max-width:290px">Data de pagamento ao agregado *<input type="date" id="pPag" value="${UI.pag}"></label>
     </section>
     <section class="panel step"><div class="row" style="justify-content:space-between"><h2>2 · Selecione ${lote?'os agregados':'o agregado'}</h2>
-        <div class="row">${lista.length>8?`<input id="busca" placeholder="Buscar nome, locação ou centro de custo" value="${esc(UI.busca)}" style="width:260px">`:''}${lote&&vis.length?`<button data-act="selAll">${vis.every(a=>UI.sel.includes(a.id))?'Desmarcar todos':'Marcar todos'}</button>`:''}</div></div>
+        <div class="row">${lista.length?`<div class="seg" title="Mostrar todos os agregados em aberto ou só os que já têm NFS importada na quinzena"><button data-act="nfsTodos" aria-pressed="${!UI.soNfs}">Todos (${lista.length})</button><button data-act="nfsSo" aria-pressed="${!!UI.soNfs}">Com NFS (${comNfs})</button></div>`:''}${lista.length>8?`<input id="busca" placeholder="Buscar nome, locação ou centro de custo" value="${esc(UI.busca)}" style="width:260px">`:''}${lote&&vis.length?`<button data-act="selAll">${vis.every(a=>UI.sel.includes(a.id))?'Desmarcar todos':'Marcar todos'}</button>`:''}</div></div>
       ${loading?'<div class="empty">Carregando…</div>': vis.length?`<div class="cards">${vis.map(a=>{const on=UI.sel.includes(a.id); const cc=ccDe(a.locacao,UI.q.h); const nf=nfsDoAg(a.id,UI.q); const nfv=nf.reduce((t,n)=>t+num(n.valor),0); return `<button class="card ${lote?'':'radio'}" data-pick="${a.id}" aria-pressed="${on}" ${nf.length?'':'title="Sem NFS importada nesta quinzena"'}><span class="box">${on&&lote?'✓':''}</span><span style="min-width:0"><div class="nm">${esc(a.nome)}</div><div class="meta">${esc(cc||'sem centro de custo')} · ${fmt(a.diariaUtil)}</div><div class="meta">${esc(a.locacao||'sem locação')}</div><div class="meta" style="color:${nf.length?'var(--ok)':'var(--bad)'};font-weight:600">${nf.length?'NFS nº '+esc(nf.map(n=>n.numero).join(', '))+' · '+fmt(nfv):'Sem NFS na quinzena'}</div></span></button>`;}).join('')}</div>`
-        :`<div class="empty">${lista.length?'Nenhum agregado encontrado na busca.':'Todos os agregados deste período já têm fechamento.'}</div>`}
+        :`<div class="empty">${!lista.length?'Todos os agregados deste período já têm fechamento.':UI.soNfs&&!comNfs?'Nenhum agregado em aberto com NFS importada nesta quinzena.':'Nenhum agregado encontrado na busca.'}</div>`}
       ${nFechados?`<p class="sub" style="font-size:12.5px">${nFechados} agregado${nFechados>1?'s':''} já ${nFechados>1?'têm':'tem'} fechamento nesta quinzena e não ${nFechados>1?'aparecem':'aparece'} na lista. <a href="#" data-act="verHist" style="color:var(--accent)">Ver fechamentos</a></p>`:''}
     </section>
     ${rows.length?`<section class="panel"><div class="ph"><h2>3 · Conferência</h2><span style="color:var(--muted);font-size:12px">Clique no dia para mudar a situação; edite o valor para diárias de período reduzido${(()=>{const n=rows.reduce((t,r)=>t+r.dias.filter(d=>d.falta).length,0); return n?` · <b style="color:var(--magenta)">${n} falta${n>1?'s':''} da aba Frequência aplicada${n>1?'s':''}</b>`:'';})()}</span></div>
@@ -1383,7 +1384,8 @@ document.addEventListener('click',e=>{
   else if(a==='q2'){UI.q={...UI.q,h:2};resetPeriodo();}
   else if(a==='modoInd'){UI.modo='individual'; UI.sel=UI.sel.slice(0,1); render();}
   else if(a==='modoLote'){UI.modo='lote'; render();}
-  else if(a==='selAll'){ const f=UI.busca.toLowerCase(); const vis=elegiveis().filter(x=>!f||(x.nome+' '+ccDe(x.locacao,UI.q.h)+' '+(x.locacao||'')).toLowerCase().includes(f)).map(x=>x.id); if(vis.every(id=>UI.sel.includes(id))) UI.sel=UI.sel.filter(id=>!vis.includes(id)); else UI.sel=[...new Set(UI.sel.concat(vis))]; render(); }
+  else if(a==='nfsTodos'||a==='nfsSo'){ UI.soNfs=a==='nfsSo'; render(); }
+  else if(a==='selAll'){ const f=UI.busca.toLowerCase(); const vis=elegiveis().filter(x=>(!f||(x.nome+' '+ccDe(x.locacao,UI.q.h)+' '+(x.locacao||'')).toLowerCase().includes(f))&&(!UI.soNfs||nfsDoAg(x.id,UI.q).length)).map(x=>x.id); if(vis.every(id=>UI.sel.includes(id))) UI.sel=UI.sel.filter(id=>!vis.includes(id)); else UI.sel=[...new Set(UI.sel.concat(vis))]; render(); }
   else if(a==='gravar') gravar();
   else if(a==='det'){ const id=t.dataset.id; const n=selecionados().length; UI.det[id]=!(UI.det[id]??(n===1)); render(); }
   else if(a==='pdfRes'){ const f=S.fech.find(x=>x.id===t.dataset.id); if(f) pdfResumo(f); }
